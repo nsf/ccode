@@ -2,6 +2,7 @@
 #include <sys/socket.h>
 #include <sys/stat.h>
 #include <sys/un.h>
+#include <string.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <unistd.h>
@@ -303,6 +304,7 @@ static void client_main(int argc, char **argv)
 		tpl_dump(tn, TPL_FD, sock);
 		tpl_free(tn);
 	} else if (strcmp(argv[1], "ac") == 0) {
+		size_t sz;
 		struct msg_ac msg;
 		int ca = 2;
 
@@ -313,16 +315,18 @@ static void client_main(int argc, char **argv)
 
 		if (starts_with(argv[ca], "-in=")) {
 			const char *fn = argv[ca]+4;
-			if (read_file(&msg.buffer.addr, &msg.buffer.sz, fn) == -1) {
+			if (read_file(&msg.buffer.addr, &sz, fn) == -1) {
 				fprintf(stderr, "Error! Failed to read from file: %s\n", fn);
 				exit(1);
 			}
+			msg.buffer.sz = (uint32_t)sz;
 			ca++;
 		} else {
-			if (read_stdin(&msg.buffer.addr, &msg.buffer.sz) == -1) {
+			if (read_stdin(&msg.buffer.addr, &sz) == -1) {
 				fprintf(stderr, "Error! Failed to read from stdin\n");
 				exit(1);
 			}
+			msg.buffer.sz = (uint32_t)sz;
 		}
 
 
