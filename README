@@ -1,0 +1,5 @@
+CCode - autocompletion daemon for the C programming language.
+
+1. Linux only, don't ask me to port it somewhere. If you need that - do it.
+2. Relies on a C99 compliance.
+3. WIP
