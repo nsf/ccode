@@ -49,6 +49,13 @@ void str_add_str(struct str **str, const struct str *str2);
 void str_add_cstr(struct str **str, const char *cstr);
 void str_add_printf(struct str **str, const char *fmt, ...);
 
+/* trim, removes 'isspace' characters from sides: both, left, right */
+void str_trim(struct str *str);
+void str_ltrim(struct str *str);
+void str_rtrim(struct str *str);
+
+struct str *str_path_split(const struct str *str, struct str **half2);
+
 /*
  * FStr is a fixed string.
  * It doesn't manage its own memory, that's why it's called fixed.

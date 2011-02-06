@@ -4,6 +4,7 @@
 #include <string.h>
 #include <stdio.h>
 #include <stdarg.h>
+#include <ctype.h>
 
 //-------------------------------------------------------------------------------
 
@@ -39,9 +40,8 @@ static struct str *str_from_cstr_len(const char *data, unsigned int len)
 	str->len = len;
 	str->cap = cap;
 	if (len > 0)
-		memcpy(str->data, data, len + 1);
-	else
-		str->data[0] = '\0';
+		memcpy(str->data, data, len);
+	str->data[len] = '\0';
 	return str;
 }
 
@@ -168,6 +168,48 @@ void str_add_printf(struct str **str, const char *fmt, ...)
 	vsnprintf(&s->data[s->len], len + 1, fmt, va);
 	va_end(va);
 	s->len += len;
+}
+
+void str_trim(struct str *str)
+{
+	str_rtrim(str);
+	str_ltrim(str);
+}
+
+void str_ltrim(struct str *str)
+{
+	char *c = str->data;
+	while (str->len > 0 && isspace(*c)) {
+		str->len--;
+		c++;
+	}
+	memmove(str->data, c, str->len);
+	str->data[str->len] = '\0';
+}
+
+void str_rtrim(struct str *str)
+{
+	while (str->len > 0 && isspace(str->data[str->len - 1]))
+		str->len--;
+	str->data[str->len] = '\0';
+}
+
+struct str *str_path_split(const struct str *str, struct str **half2)
+{
+	const char *c = str->data + (str->len - 1);
+	while (c != str->data && *c != '/')
+		c--;
+
+	if (c == str->data) {
+		if (half2)
+			*half2 = str_dup(str);
+		return str_new(0);
+	}
+
+	if (half2)
+		*half2 = str_from_cstr_len(c+1, str->data + str->len - (c+1));
+
+	return str_from_cstr_len(str->data, c - str->data);
 }
 
 //-------------------------------------------------------------------------------
