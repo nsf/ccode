@@ -3,6 +3,7 @@
 #include <sys/stat.h>
 #include <sys/un.h>
 #include <string.h>
+#include <signal.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <unistd.h>
@@ -41,10 +42,12 @@ static int make_ac_proposal(struct ac_proposal *p,
 static struct str *extract_partial(struct msg_ac *msg);
 static int isident(int c);
 static void try_load_dotccode(wordexp_t *wexp, const char *filename);
+static void handle_sigint(int);
 
-static CXIndex clang_index = 0;
-static CXTranslationUnit clang_tu = 0;
-static char *last_filename = 0;
+static CXIndex clang_index;
+static CXTranslationUnit clang_tu;
+static char *last_filename;
+static struct str *sock_path;
 
 //-------------------------------------------------------------------------
 
@@ -343,14 +346,28 @@ static void process_ac(int sock)
 	free_msg_ac_response(&msg_r);
 }
 
+static void handle_sigint(int unused)
+{
+	unlink(sock_path->data);
+	exit(0);
+}
+
 static void server_main(int argc, char **argv)
 {
-	struct str *path = get_socket_path();
-	int sock = create_server_socket(path);
+	struct sigaction sa;
+	int sock;
+
+	sock_path = get_socket_path();
+	sock = create_server_socket(sock_path);
 	if (sock == -1) {
-		fprintf(stderr, "Error! Failed to create a server socket: %s\n", path->data);
+		fprintf(stderr, "Error! Failed to create a server socket: %s\n",
+			sock_path->data);
 		exit(1);
 	}
+
+	sa.sa_handler = handle_sigint;
+	sa.sa_flags = 0;
+	sigaction(SIGINT, &sa, 0);
 
 	clang_index = clang_createIndex(0, 0);
 	server_loop(sock);
@@ -359,8 +376,8 @@ static void server_main(int argc, char **argv)
 	clang_disposeIndex(clang_index);
 
 	close(sock);
-	unlink(path->data);
-	str_free(path);
+	unlink(sock_path->data);
+	str_free(sock_path);
 }
 
 //-------------------------------------------------------------------------
