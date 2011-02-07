@@ -183,10 +183,7 @@ static void process_ac(int sock)
 
 	printf("AUTOCOMPLETION:\n");
 	printf(" buffer size: %d\n", msg.buffer.sz);
-	printf(" filename: %s\n", msg.filename);
-	printf(" line: %d\n", msg.line);
-	printf(" col: %d\n", msg.col);
-	printf("--------------------------------------------------\n");
+	printf(" location: %s:%d:%d\n", msg.filename, msg.line, msg.col);
 
 	CXCodeCompleteResults *results;
 
@@ -199,19 +196,19 @@ static void process_ac(int sock)
 		if (last_filename)
 			free(last_filename);
 		last_filename = strdup(msg.filename);
+	}
 	/*
-	for (int i = 0, n = clang_getNumDiagnostics(tu); i != n; ++i) {
-		CXDiagnostic diag = clang_getDiagnostic(tu, i);
+	for (int i = 0, n = clang_getNumDiagnostics(clang_tu); i != n; ++i) {
+		CXDiagnostic diag = clang_getDiagnostic(clang_tu, i);
 		CXString string = clang_formatDiagnostic(diag, clang_defaultDiagnosticDisplayOptions());
 		fprintf(stderr, "%s\n", clang_getCString(string));
 		clang_disposeString(string);
 	}
 	*/
-	}
 
 	results = clang_codeCompleteAt(clang_tu, msg.filename, msg.line, msg.col,
 				       &unsaved, 1,
-				       0);
+				       CXCodeComplete_IncludeMacros);
 	free_msg_ac(&msg);
 
 	struct msg_ac_response msg_r = { 0, 0 };
@@ -220,7 +217,7 @@ static void process_ac(int sock)
 		clang_sortCodeCompletionResults(results->Results,
 						results->NumResults);
 
-		printf("got %d results\n", results->NumResults);
+		printf(" results: %d\n", results->NumResults);
 		printf("--------------------------------------------------\n");
 		msg_r.proposals_n = results->NumResults;
 		msg_r.proposals = malloc(sizeof(struct ac_proposal) *
