@@ -29,10 +29,6 @@ fu! s:ccodeCommand(cmd, args)
 	endif
 endf
 
-fu! s:ccodeCurBufOpt(filename)
-	return '-in=' . a:filename
-endf
-
 fu! s:ccodeLine()
 	return printf('%d', line('.'))
 endf
@@ -43,8 +39,9 @@ endf
 
 fu! s:ccodeAutocomplete()
 	let filename = s:ccodeCurrentBuffer()
-	let result = s:ccodeCommand('ac', [s:ccodeCurBufOpt(filename), bufname('%'),
-				   \ s:ccodeLine(), s:ccodeCol()])
+	let result = s:ccodeCommand('ac', [bufname('%'),
+				   \ s:ccodeLine(), s:ccodeCol(),
+				   \ filename])
 	call delete(filename)
 	return result
 endf

@@ -26,6 +26,7 @@ static struct str *get_socket_path();
 static void client_main(int argc, char **argv);
 static int create_client_socket();
 static int try_connect(int sock, const char *file);
+static char *prepend_cwd(const char *file);
 
 static void server_main(int argc, char **argv);
 static int create_server_socket(const struct str *file);
@@ -276,7 +277,6 @@ static int try_connect(int sock, const char *file)
 	return connect(sock, (struct sockaddr*)&addr, sizeof addr);
 }
 
-
 static void client_main(int argc, char **argv)
 {
 	if (argc < 2) {
@@ -304,43 +304,46 @@ static void client_main(int argc, char **argv)
 		tpl_dump(tn, TPL_FD, sock);
 		tpl_free(tn);
 	} else if (strcmp(argv[1], "ac") == 0) {
+		char *end;
 		size_t sz;
 		struct msg_ac msg;
-		int ca = 2;
 
 		if (argc != 5 && argc != 6) {
 			fprintf(stderr, "Not enough arguments\n");
 			exit(1);
 		}
 
-		if (starts_with(argv[ca], "-in=")) {
-			const char *fn = argv[ca]+4;
+		if (starts_with(argv[2], "/"))
+			msg.filename = strdup(argv[2]);
+		else
+			msg.filename = prepend_cwd(argv[2]);
+
+		msg.line = strtol(argv[3], &end, 10);
+		if (*end != '\0') {
+			fprintf(stderr, "Failed to parse an int from string: %s\n", argv[3]);
+			exit(1);
+		}
+		msg.col = strtol(argv[4], &end, 10);
+		if (*end != '\0') {
+			fprintf(stderr, "Failed to parse an int from string: %s\n", argv[4]);
+			exit(1);
+		}
+
+		// if there is a fifth argument, load currently editted buffer
+		// from a file, otherwise use stdin
+		if (argc == 6) {
+			const char *fn = argv[5];
 			if (read_file(&msg.buffer.addr, &sz, fn) == -1) {
 				fprintf(stderr, "Error! Failed to read from file: %s\n", fn);
 				exit(1);
 			}
 			msg.buffer.sz = (uint32_t)sz;
-			ca++;
 		} else {
 			if (read_stdin(&msg.buffer.addr, &sz) == -1) {
 				fprintf(stderr, "Error! Failed to read from stdin\n");
 				exit(1);
 			}
 			msg.buffer.sz = (uint32_t)sz;
-		}
-
-
-		char *end;
-		msg.filename = strdup(argv[ca++]);
-		msg.line = strtol(argv[ca++], &end, 10);
-		if (*end != '\0') {
-			fprintf(stderr, "Failed to parse an int from string: %s\n", argv[3]);
-			exit(1);
-		}
-		msg.col = strtol(argv[ca++], &end, 10);
-		if (*end != '\0') {
-			fprintf(stderr, "Failed to parse an int from string: %s\n", argv[4]);
-			exit(1);
 		}
 
 		// send msg type
@@ -374,6 +377,27 @@ static void client_main(int argc, char **argv)
 	}
 
 	close(sock);
+}
+
+static char *prepend_cwd(const char *file)
+{
+	struct str *tmp;
+	char cwd[1024];
+	char *ret;
+	char *pcwd;
+
+	pcwd = getcwd(cwd, 1024);
+	if (!pcwd) {
+		fprintf(stderr, "Path is too long, more than 1024? wtf, man?\n");
+		exit(1);
+	}
+
+	tmp = str_from_cstr(pcwd);
+	str_add_cstr(&tmp, "/");
+	str_add_cstr(&tmp, file);
+	ret = strdup(tmp->data);
+	str_free(tmp);
+	return ret;
 }
 
 static void print_completion_result(CXCompletionResult *r)
