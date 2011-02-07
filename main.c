@@ -18,6 +18,7 @@
 // prototypes, just for quick reference
 //-------------------------------------------------------------------------
 
+static int file_exists(const char *filename);
 static int starts_with(const char *s1, const char *s2);
 
 // read file to a newly allocated buf, 0 on success, -1 on error
@@ -30,8 +31,10 @@ static void client_main(int argc, char **argv);
 static int create_client_socket();
 static int try_connect(int sock, const char *file);
 static char *prepend_cwd(const char *file);
+static int connect_or_die();
+static void run_server_and_wait(const char *path);
 
-static void server_main(int argc, char **argv);
+static void server_main();
 static int create_server_socket(const struct str *file);
 static void server_loop(int sock);
 static void process_ac(int sock);
@@ -50,6 +53,12 @@ static char *last_filename;
 static struct str *sock_path;
 
 //-------------------------------------------------------------------------
+
+static int file_exists(const char *filename)
+{
+	struct stat st;
+	return stat(filename, &st) == 0;
+}
 
 static int starts_with(const char *s1, const char *s2)
 {
@@ -264,13 +273,13 @@ static void process_ac(int sock)
 
 	struct str *partial = extract_partial(&msg);
 
-	printf("AUTOCOMPLETION:\n");
+	//printf("AUTOCOMPLETION:\n");
 	if (partial) {
 		msg.col -= partial->len;
-		printf(" partial: '%s'\n", partial->data);
+		//printf(" partial: '%s'\n", partial->data);
 	}
-	printf(" buffer size: %d\n", msg.buffer.sz);
-	printf(" location: %s:%d:%d\n", msg.filename, msg.line, msg.col);
+	//printf(" buffer size: %d\n", msg.buffer.sz);
+	//printf(" location: %s:%d:%d\n", msg.filename, msg.line, msg.col);
 
 	if (!last_filename || strcmp(last_filename, msg.filename) != 0) {
 		if (clang_tu)
@@ -290,6 +299,7 @@ static void process_ac(int sock)
 		wordfree(&flags);
 
 	// diag
+	/*
 	for (int i = 0, n = clang_getNumDiagnostics(clang_tu); i != n; ++i) {
 		CXDiagnostic diag = clang_getDiagnostic(clang_tu, i);
 		CXString string = clang_formatDiagnostic(diag, clang_defaultDiagnosticDisplayOptions());
@@ -297,6 +307,7 @@ static void process_ac(int sock)
 		clang_disposeString(string);
 		clang_disposeDiagnostic(diag);
 	}
+	*/
 
 	CXCodeCompleteResults *results;
 	results = clang_codeCompleteAt(clang_tu, msg.filename, msg.line, msg.col,
@@ -305,6 +316,7 @@ static void process_ac(int sock)
 	free_msg_ac(&msg);
 
 	// diag
+	/*
 	for (int i = 0, n = clang_codeCompleteGetNumDiagnostics(results); i != n; ++i) {
 		CXDiagnostic diag = clang_codeCompleteGetDiagnostic(results, i);
 		CXString string = clang_formatDiagnostic(diag, clang_defaultDiagnosticDisplayOptions());
@@ -312,6 +324,7 @@ static void process_ac(int sock)
 		clang_disposeString(string);
 		clang_disposeDiagnostic(diag);
 	}
+	*/
 
 	struct msg_ac_response msg_r = { (partial) ? partial->len : 0, 0, 0 };
 
@@ -334,8 +347,8 @@ static void process_ac(int sock)
 		}
 		msg_r.proposals_n = cur;
 
-		printf(" results: %d\n", msg_r.proposals_n);
-		printf("--------------------------------------------------\n");
+		//printf(" results: %d\n", msg_r.proposals_n);
+		//printf("--------------------------------------------------\n");
 	}
 
 	if (partial)
@@ -352,7 +365,7 @@ static void handle_sigint(int unused)
 	exit(0);
 }
 
-static void server_main(int argc, char **argv)
+static void server_main()
 {
 	struct sigaction sa;
 	int sock;
@@ -401,17 +414,34 @@ static int try_connect(int sock, const char *file)
 	return connect(sock, (struct sockaddr*)&addr, sizeof addr);
 }
 
-static void client_main(int argc, char **argv)
+static void run_server_and_wait(const char *path)
 {
-	if (argc < 2) {
-		printf("ccode client, commands:\n"
-		       "  close\n"
-		       "  ac <filename> <line> <col> (+ currently editted buffer as stdin)\n");
-		return;
+	if (fork() == 0) {
+		server_main();
+	} else {
+		// wait for 10ms up to 100 times (1 second) for socket
+		for (int i = 0; i < 100; ++i) {
+			usleep(10000);
+			if (file_exists(path))
+				return;
+		}
+		fprintf(stderr, "Failed to start a server, can't see socket: %s\n",
+			path);
+		exit(1);
 	}
+}
 
-	struct str *path = get_socket_path();
-	int sock = create_client_socket();
+static int connect_or_die()
+{
+	struct str *path;
+	int sock;
+
+	path = get_socket_path();
+
+	if (!file_exists(path->data))
+		run_server_and_wait(path->data);
+
+	sock = create_client_socket();
 	if (sock == -1) {
 		fprintf(stderr, "Error! Failed to create a client socket: %s\n", path->data);
 		exit(1);
@@ -422,12 +452,28 @@ static void client_main(int argc, char **argv)
 		exit(1);
 	}
 	str_free(path);
+	return sock;
+}
+
+static void client_main(int argc, char **argv)
+{
+	int sock;
+
+	if (argc < 2) {
+		printf("ccode client, commands:\n"
+		       "  close\n"
+		       "  ac <filename> <line> <col> (+ currently editted buffer as stdin)\n");
+		return;
+	}
 
 	if (strcmp(argv[1], "close") == 0) {
+		sock = connect_or_die();
 		tpl_node *tn = msg_node_pack(MSG_CLOSE);
 		tpl_dump(tn, TPL_FD, sock);
 		tpl_free(tn);
+		close(sock);
 	} else if (strcmp(argv[1], "ac") == 0) {
+		sock = connect_or_die();
 		char *end;
 		size_t sz;
 		struct msg_ac msg;
@@ -494,13 +540,13 @@ static void client_main(int argc, char **argv)
 		}
 		printf("]]");
 		free_msg_ac_response(&msg_r);
+		close(sock);
 	} else {
 		printf("ccode client, commands:\n"
 		       "  close\n"
 		       "  ac <filename> <line> <col> (+ currently editted buffer as stdin)\n");
 	}
 
-	close(sock);
 }
 
 static char *prepend_cwd(const char *file)
@@ -583,7 +629,7 @@ static int make_ac_proposal(struct ac_proposal *p,
 		s = clang_getCompletionChunkText(r->CompletionString, i);
 		switch (kind) {
 		case CXCompletionChunk_ResultType:
-			str_add_printf(&abbr, "%s ", clang_getCString(s));
+			//str_add_printf(&abbr, "%s ", clang_getCString(s));
 			break;
 		case CXCompletionChunk_TypedText:
 			str_add_cstr(&word, clang_getCString(s));
@@ -610,7 +656,7 @@ static int make_ac_proposal(struct ac_proposal *p,
 int main(int argc, char **argv)
 {
 	if (argc > 1 && strcmp("-s", argv[1]) == 0) {
-		server_main(argc, argv);
+		server_main();
 	} else {
 		client_main(argc, argv);
 	}
