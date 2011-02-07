@@ -33,18 +33,6 @@ static int is_cstr_in_str(struct str *str, const char *cstr)
 	return 0;
 }
 
-static struct str *str_from_cstr_len(const char *data, unsigned int len)
-{
-	unsigned int cap = len > 0 ? len : STR_DEFAULT_CAPACITY;
-	struct str *str = xalloc(sizeof(struct str) + cap + 1);
-	str->len = len;
-	str->cap = cap;
-	if (len > 0)
-		memcpy(str->data, data, len);
-	str->data[len] = '\0';
-	return str;
-}
-
 static void str_add_cstr_len(struct str **str, const char *data, unsigned int len)
 {
 	if (!len)
@@ -79,6 +67,18 @@ struct str *str_from_cstr(const char *cstr)
 {
 	assert(cstr != 0);
 	return str_from_cstr_len(cstr, strlen(cstr));
+}
+
+struct str *str_from_cstr_len(const char *cstr, unsigned int len)
+{
+	unsigned int cap = len > 0 ? len : STR_DEFAULT_CAPACITY;
+	struct str *str = xalloc(sizeof(struct str) + cap + 1);
+	str->len = len;
+	str->cap = cap;
+	if (len > 0)
+		memcpy(str->data, cstr, len);
+	str->data[len] = '\0';
+	return str;
 }
 
 struct str *str_dup(const struct str *rhs)

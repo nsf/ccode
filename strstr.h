@@ -36,6 +36,7 @@ struct str {
 /* different ways to create a str */
 struct str *str_new(unsigned int cap);
 struct str *str_from_cstr(const char *cstr);
+struct str *str_from_cstr_len(const char *cstr, unsigned int len);
 struct str *str_printf(const char *fmt, ...);
 struct str *str_dup(const struct str *str);
 
