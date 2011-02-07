@@ -292,6 +292,7 @@ static void process_ac(int sock)
 		CXString string = clang_formatDiagnostic(diag, clang_defaultDiagnosticDisplayOptions());
 		fprintf(stderr, "%s\n", clang_getCString(string));
 		clang_disposeString(string);
+		clang_disposeDiagnostic(diag);
 	}
 
 	CXCodeCompleteResults *results;
@@ -306,6 +307,7 @@ static void process_ac(int sock)
 		CXString string = clang_formatDiagnostic(diag, clang_defaultDiagnosticDisplayOptions());
 		fprintf(stderr, "%s\n", clang_getCString(string));
 		clang_disposeString(string);
+		clang_disposeDiagnostic(diag);
 	}
 
 	struct msg_ac_response msg_r = { (partial) ? partial->len : 0, 0, 0 };
