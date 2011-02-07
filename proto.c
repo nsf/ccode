@@ -42,7 +42,9 @@ void msg_ac_response_send(struct msg_ac_response *msg, int sock)
 	tpl_node *tn;
 
 	tn = tpl_map(MSG_AC_RESPONSE_FMT,
+		     &msg->partial,
 		     &prop);
+	tpl_pack(tn, 0);
 	for (size_t i = 0; i < msg->proposals_n; ++i) {
 		prop = msg->proposals[i];
 		tpl_pack(tn, 1);
@@ -57,8 +59,10 @@ void msg_ac_response_recv(struct msg_ac_response *msg, int sock)
 	tpl_node *tn;
 
 	tn = tpl_map(MSG_AC_RESPONSE_FMT,
+		     &msg->partial,
 		     &prop);
 	tpl_load(tn, TPL_FD, sock);
+	tpl_unpack(tn, 0);
 	msg->proposals_n = tpl_Alen(tn, 1);
 	msg->proposals = malloc(sizeof(struct ac_proposal) *
 				msg->proposals_n);

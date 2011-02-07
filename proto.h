@@ -32,7 +32,7 @@ void free_msg_ac(struct msg_ac *msg);
 //-------------------------------------------------------------------------
 
 #define MSG_AC_RESPONSE		2
-#define MSG_AC_RESPONSE_FMT	"A(S(ss))"
+#define MSG_AC_RESPONSE_FMT	"iA(S(ss))"
 
 struct ac_proposal {
 	char *word;
@@ -40,6 +40,7 @@ struct ac_proposal {
 };
 
 struct msg_ac_response {
+	int partial;
 	struct ac_proposal *proposals;
 	size_t proposals_n;
 };

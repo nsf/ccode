@@ -6,6 +6,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <unistd.h>
+#include <ctype.h>
 #include <clang-c/Index.h>
 #include "strstr.h"
 #include "tpl.h"
@@ -33,7 +34,11 @@ static int create_server_socket(const struct str *file);
 static void server_loop(int sock);
 static void process_ac(int sock);
 static void print_completion_result(CXCompletionResult *r);
-static void make_ac_proposal(struct ac_proposal *p, CXCompletionResult *r);
+static int make_ac_proposal(struct ac_proposal *p,
+			    CXCompletionResult *r,
+			    struct str *partial);
+static struct str *extract_partial(struct msg_ac *msg);
+static int isident(int c);
 
 static CXIndex clang_index = 0;
 static CXTranslationUnit clang_tu = 0;
@@ -165,6 +170,43 @@ static void server_loop(int sock)
 	}
 }
 
+static struct str *extract_partial(struct msg_ac *msg)
+{
+	char *cursor;
+	char *c = msg->buffer.addr;
+	char *end = msg->buffer.addr + msg->buffer.sz;
+
+	for (int line = 1; line < msg->line; line++) {
+		while (1) {
+			if (c == end)
+				return 0;
+			if (*c == '\n') {
+				c++;
+				break;
+			}
+			c++;
+		}
+	}
+
+	cursor = c + (msg->col - 1);
+	c += msg->col - 2;
+	while (isident(*c))
+		c--;
+	c++;
+
+	if (c == cursor)
+		return 0;
+
+	return str_from_cstr_len(c, cursor - c);
+}
+
+static int isident(int c)
+{
+	if (isalnum(c) || c == '_')
+		return 1;
+	return 0;
+}
+
 static void process_ac(int sock)
 {
 	tpl_node *tn;
@@ -181,15 +223,20 @@ static void process_ac(int sock)
 		msg.buffer.sz
 	};
 
+	struct str *partial = extract_partial(&msg);
+
 	printf("AUTOCOMPLETION:\n");
+	if (partial) {
+		msg.col -= partial->len;
+		printf(" partial: '%s'\n", partial->data);
+	}
 	printf(" buffer size: %d\n", msg.buffer.sz);
 	printf(" location: %s:%d:%d\n", msg.filename, msg.line, msg.col);
-
-	CXCodeCompleteResults *results;
 
 	if (!last_filename || strcmp(last_filename, msg.filename) != 0) {
 		if (clang_tu)
 			clang_disposeTranslationUnit(clang_tu);
+
 		clang_tu = clang_parseTranslationUnit(clang_index, msg.filename,
 						      0, 0, &unsaved, 1,
 						      clang_defaultEditingTranslationUnitOptions());
@@ -197,36 +244,56 @@ static void process_ac(int sock)
 			free(last_filename);
 		last_filename = strdup(msg.filename);
 	}
-	/*
+
+	// diag
 	for (int i = 0, n = clang_getNumDiagnostics(clang_tu); i != n; ++i) {
 		CXDiagnostic diag = clang_getDiagnostic(clang_tu, i);
 		CXString string = clang_formatDiagnostic(diag, clang_defaultDiagnosticDisplayOptions());
 		fprintf(stderr, "%s\n", clang_getCString(string));
 		clang_disposeString(string);
 	}
-	*/
 
+	CXCodeCompleteResults *results;
 	results = clang_codeCompleteAt(clang_tu, msg.filename, msg.line, msg.col,
 				       &unsaved, 1,
 				       CXCodeComplete_IncludeMacros);
 	free_msg_ac(&msg);
 
-	struct msg_ac_response msg_r = { 0, 0 };
+	// diag
+	for (int i = 0, n = clang_codeCompleteGetNumDiagnostics(results); i != n; ++i) {
+		CXDiagnostic diag = clang_codeCompleteGetDiagnostic(results, i);
+		CXString string = clang_formatDiagnostic(diag, clang_defaultDiagnosticDisplayOptions());
+		fprintf(stderr, "%s\n", clang_getCString(string));
+		clang_disposeString(string);
+	}
+
+	struct msg_ac_response msg_r = { (partial) ? partial->len : 0, 0, 0 };
 
 	if (results) {
 		clang_sortCodeCompletionResults(results->Results,
 						results->NumResults);
 
-		printf(" results: %d\n", results->NumResults);
-		printf("--------------------------------------------------\n");
 		msg_r.proposals_n = results->NumResults;
 		msg_r.proposals = malloc(sizeof(struct ac_proposal) *
 					 msg_r.proposals_n);
 
-		for (int i = 0; i < msg_r.proposals_n; ++i)
-			make_ac_proposal(&msg_r.proposals[i], &results->Results[i]);
+		int cur = 0;
+		for (int i = 0; i < msg_r.proposals_n; ++i) {
+			int added;
+			added = make_ac_proposal(&msg_r.proposals[cur],
+						 &results->Results[i],
+						 partial);
+			if (added)
+				cur++;
+		}
+		msg_r.proposals_n = cur;
+
+		printf(" results: %d\n", msg_r.proposals_n);
+		printf("--------------------------------------------------\n");
 	}
 
+	if (partial)
+		str_free(partial);
 	clang_disposeCodeCompleteResults(results);
 
 	msg_ac_response_send(&msg_r, sock);
@@ -357,7 +424,7 @@ static void client_main(int argc, char **argv)
 		struct msg_ac_response msg_r;
 
 		msg_ac_response_recv(&msg_r, sock);
-		printf("[0, [");
+		printf("[%d, [", msg_r.partial);
 		for (size_t i = 0; i < msg_r.proposals_n; ++i) {
 			struct ac_proposal *p = &msg_r.proposals[i];
 			printf("{'word':'%s','abbr':'%s'}", p->word, p->abbr);
@@ -437,7 +504,9 @@ static void print_completion_result(CXCompletionResult *r)
 	str_free(abbr);
 }
 
-static void make_ac_proposal(struct ac_proposal *p, CXCompletionResult *r)
+static int make_ac_proposal(struct ac_proposal *p,
+			    CXCompletionResult *r,
+			    struct str *partial)
 {
 	struct str *abbr, *word;
 	unsigned int chunks_n;
@@ -458,6 +527,12 @@ static void make_ac_proposal(struct ac_proposal *p, CXCompletionResult *r)
 			break;
 		case CXCompletionChunk_TypedText:
 			str_add_cstr(&word, clang_getCString(s));
+			if (partial && !starts_with(word->data, partial->data)) {
+				str_free(word);
+				str_free(abbr);
+				clang_disposeString(s);
+				return 0;
+			}
 		default:
 			str_add_cstr(&abbr, clang_getCString(s));
 			break;
@@ -469,6 +544,7 @@ static void make_ac_proposal(struct ac_proposal *p, CXCompletionResult *r)
 	p->word = strdup(word->data);
 	str_free(word);
 	str_free(abbr);
+	return 1;
 }
 
 int main(int argc, char **argv)
