@@ -6,6 +6,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <unistd.h>
+#include <wordexp.h>
 #include <ctype.h>
 #include <clang-c/Index.h>
 #include "strstr.h"
@@ -39,6 +40,7 @@ static int make_ac_proposal(struct ac_proposal *p,
 			    struct str *partial);
 static struct str *extract_partial(struct msg_ac *msg);
 static int isident(int c);
+static void try_load_dotccode(wordexp_t *wexp, const char *filename);
 
 static CXIndex clang_index = 0;
 static CXTranslationUnit clang_tu = 0;
@@ -207,10 +209,42 @@ static int isident(int c)
 	return 0;
 }
 
+static void try_load_dotccode(wordexp_t *wexp, const char *filename)
+{
+	void *buf;
+	size_t size;
+	struct str *fn;
+	struct str *dotccode;
+
+	wexp->we_wordc = 0;
+	wexp->we_wordv = 0;
+
+	fn = str_from_cstr(filename);
+	dotccode = str_path_split(fn, 0);
+	str_add_cstr(&dotccode, "/.ccode");
+
+	if (read_file(&buf, &size, dotccode->data) == -1) {
+		str_free(fn);
+		str_free(dotccode);
+		return;
+	}
+
+	// TODO: fstr trim? cstr trim?
+	struct str *contents = str_from_cstr_len(buf, (unsigned int)size);
+	str_trim(contents);
+
+	wordexp(contents->data, wexp, 0);
+	str_free(fn);
+	str_free(dotccode);
+	str_free(contents);
+	free(buf);
+}
+
 static void process_ac(int sock)
 {
 	tpl_node *tn;
 	struct msg_ac msg;
+	wordexp_t flags;
 
 	tn = msg_ac_node(&msg);
 	tpl_load(tn, TPL_FD, sock);
@@ -222,6 +256,8 @@ static void process_ac(int sock)
 		msg.buffer.addr,
 		msg.buffer.sz
 	};
+
+	try_load_dotccode(&flags, msg.filename);
 
 	struct str *partial = extract_partial(&msg);
 
@@ -238,12 +274,17 @@ static void process_ac(int sock)
 			clang_disposeTranslationUnit(clang_tu);
 
 		clang_tu = clang_parseTranslationUnit(clang_index, msg.filename,
-						      0, 0, &unsaved, 1,
+						      (char const * const *)flags.we_wordv,
+						      flags.we_wordc,
+						      &unsaved, 1,
 						      clang_defaultEditingTranslationUnitOptions());
 		if (last_filename)
 			free(last_filename);
 		last_filename = strdup(msg.filename);
 	}
+
+	if (flags.we_wordv)
+		wordfree(&flags);
 
 	// diag
 	for (int i = 0, n = clang_getNumDiagnostics(clang_tu); i != n; ++i) {
