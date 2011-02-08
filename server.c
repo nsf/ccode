@@ -15,13 +15,21 @@ static void process_ac(int sock);
 static void print_completion_result(CXCompletionResult *r);
 static int make_ac_proposal(struct ac_proposal *p,
 			    CXCompletionResult *r,
-			    struct str *partial);
+			    struct str *fmt);
 static struct str *extract_partial(struct msg_ac *msg);
 static int isident(int c);
 static void try_load_dotccode(wordexp_t *wexp, const char *filename);
 static void handle_sigint(int);
 static int wordexps_the_same(wordexp_t *a, wordexp_t *b);
 static int needs_reparsing(wordexp_t *w, const char *filename);
+static void sort_cc_results(CXCompletionResult *results, size_t results_n);
+static int code_completion_results_cmp(CXCompletionResult *r1,
+				       CXCompletionResult *r2);
+static CXString get_result_typed_text(CXCompletionResult *r);
+static size_t count_type_chars(CXCompletionResult *r);
+static size_t filter_out_cc_results(CXCompletionResult *results,
+				    size_t results_n, struct str *partial,
+				    struct str **fmt);
 
 //-------------------------------------------------------------------------
 
@@ -32,6 +40,8 @@ static wordexp_t last_wordexp;
 static struct str *sock_path;
 
 #define SERVER_SOCKET_BACKLOG 10
+#define MAX_AC_RESULTS 999999
+#define MAX_TYPE_CHARS 20
 
 static int needs_reparsing(wordexp_t *w, const char *filename)
 {
@@ -243,10 +253,13 @@ static void process_ac(int sock)
 	struct msg_ac_response msg_r = { (partial) ? partial->len : 0, 0, 0 };
 
 	if (results) {
-		clang_sortCodeCompletionResults(results->Results,
-						results->NumResults);
-
-		msg_r.proposals_n = results->NumResults;
+		struct str *fmt;
+		msg_r.proposals_n = filter_out_cc_results(results->Results,
+							  results->NumResults,
+							  partial, &fmt);
+		sort_cc_results(results->Results, msg_r.proposals_n);
+		if (msg_r.proposals_n > MAX_AC_RESULTS)
+			msg_r.proposals_n = MAX_AC_RESULTS;
 		msg_r.proposals = malloc(sizeof(struct ac_proposal) *
 					 msg_r.proposals_n);
 
@@ -255,11 +268,12 @@ static void process_ac(int sock)
 			int added;
 			added = make_ac_proposal(&msg_r.proposals[cur],
 						 &results->Results[i],
-						 partial);
+						 fmt);
 			if (added)
 				cur++;
 		}
 		msg_r.proposals_n = cur;
+		str_free(fmt);
 	}
 
 	if (partial)
@@ -270,9 +284,100 @@ static void process_ac(int sock)
 	free_msg_ac_response(&msg_r);
 }
 
+static int code_completion_results_cmp(CXCompletionResult *r1,
+				       CXCompletionResult *r2)
+{
+	int prio1 = clang_getCompletionPriority(r1->CompletionString);
+	int prio2 = clang_getCompletionPriority(r2->CompletionString);
+	if (prio1 != prio2)
+		return prio1 - prio2;
+
+	CXString r1t = get_result_typed_text(r1);
+	CXString r2t = get_result_typed_text(r2);
+	int cmp = strcmp(clang_getCString(r1t),
+			 clang_getCString(r2t));
+	clang_disposeString(r1t);
+	clang_disposeString(r2t);
+	return cmp;
+}
+
+static CXString get_result_typed_text(CXCompletionResult *r)
+{
+	unsigned int chunks_n = clang_getNumCompletionChunks(r->CompletionString);
+	for (unsigned int i = 0; i < chunks_n; ++i) {
+		enum CXCompletionChunkKind kind;
+		kind = clang_getCompletionChunkKind(r->CompletionString, i);
+		if (kind == CXCompletionChunk_TypedText)
+			return clang_getCompletionChunkText(r->CompletionString, i);
+	}
+	fprintf(stderr, "No typed text chunk, fuck!\n");
+	exit(1);
+}
+
+static size_t count_type_chars(CXCompletionResult *r)
+{
+	unsigned int chars = 0;
+	unsigned int chunks_n = clang_getNumCompletionChunks(r->CompletionString);
+	for (unsigned int i = 0; i < chunks_n; ++i) {
+		enum CXCompletionChunkKind kind;
+		kind = clang_getCompletionChunkKind(r->CompletionString, i);
+		if (kind == CXCompletionChunk_ResultType) {
+			CXString s = clang_getCompletionChunkText(r->CompletionString, i);
+			chars += strlen(clang_getCString(s));
+			clang_disposeString(s);
+		}
+	}
+	return chars;
+}
+
+static void sort_cc_results(CXCompletionResult *results, size_t results_n)
+{
+	qsort(results, results_n, sizeof(CXCompletionResult),
+	      (int (*)(const void*,const void*))code_completion_results_cmp);
+}
+
+static size_t filter_out_cc_results(CXCompletionResult *results,
+				    size_t results_n,
+				    struct str *partial,
+				    struct str **fmt)
+{
+	if (!partial) {
+		*fmt = str_printf("%%%ds %%s", MAX_TYPE_CHARS);
+		return results_n;
+	}
+
+	size_t maxl = 0;
+	size_t cur = 0;
+	for (size_t i = 0; i < results_n; ++i) {
+		CXString s = get_result_typed_text(&results[i]);
+		if (!starts_with(clang_getCString(s), partial->data)) {
+			clang_disposeString(s);
+			continue;
+		}
+		clang_disposeString(s);
+
+		CXCompletionResult tmp = results[cur];
+		results[cur] = results[i];
+		results[i] = tmp;
+
+		if (maxl != MAX_TYPE_CHARS) {
+			size_t l = count_type_chars(&results[cur]);
+			if (l > maxl) {
+				if (l > MAX_TYPE_CHARS)
+					maxl = MAX_TYPE_CHARS;
+				else
+					maxl = l;
+			}
+		}
+
+		cur++;
+	}
+	*fmt = str_printf("%%%ds %%s", maxl);
+	return cur;
+}
+
 static int make_ac_proposal(struct ac_proposal *p,
-			    CXCompletionResult *r,
-			    struct str *partial)
+			    CXCompletionResult *r, struct str *fmt)
 {
 	struct str *abbr, *word, *type, *text;
 	unsigned int chunks_n;
@@ -295,14 +400,6 @@ static int make_ac_proposal(struct ac_proposal *p,
 			break;
 		case CXCompletionChunk_TypedText:
 			str_add_cstr(&word, clang_getCString(s));
-			if (partial && !starts_with(word->data, partial->data)) {
-				str_free(word);
-				str_free(abbr);
-				str_free(type);
-				str_free(text);
-				clang_disposeString(s);
-				return 0;
-			}
 		default:
 			str_add_cstr(&text, clang_getCString(s));
 			break;
@@ -310,11 +407,11 @@ static int make_ac_proposal(struct ac_proposal *p,
 		clang_disposeString(s);
 	}
 
-	if (type->len > 16) {
-		type->len = 15;
+	if (type->len > MAX_TYPE_CHARS) {
+		type->len = MAX_TYPE_CHARS-1;
 		str_add_cstr(&type, "…");
 	}
-	str_add_printf(&abbr, "%16s %s", type->data, text->data);
+	str_add_printf(&abbr, fmt->data, type->data, text->data);
 
 	p->abbr = strdup(abbr->data);
 	p->word = strdup(word->data);
