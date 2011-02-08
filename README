@@ -1,10 +1,10 @@
-CCode - autocompletion daemon for the C programming language.
+CCode - An autocompletion daemon for the C programming language.
 
 1. Linux only, don't ask me to port it somewhere. If you need that - do it.
    But kinda works on Mac too.
 2. Relies on a C99 compliance (flexible array members, snprintf behaviour, etc).
 3. Mostly done, but has few quirks.
-4. Can be used to complete C++/ObjC, but I'm not targetting these languages.
+4. Can be used to complete C++/ObjC, but I'm not targeting these languages.
    Don't report C++/ObjC specific bugs.
 5. No usage guide (wanna write one?).
 6. Currently only per directory CFLAGS configuration (just dump your CFLAGS to .ccode file).
