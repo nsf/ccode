@@ -30,6 +30,8 @@ static size_t count_type_chars(CXCompletionResult *r);
 static size_t filter_out_cc_results(CXCompletionResult *results,
 				    size_t results_n, struct str *partial,
 				    struct str **fmt);
+static struct str *all_results_fmt(CXCompletionResult *results,
+				   size_t results_n);
 
 //-------------------------------------------------------------------------
 
@@ -42,6 +44,7 @@ static struct str *sock_path;
 #define SERVER_SOCKET_BACKLOG 10
 #define MAX_AC_RESULTS 999999
 #define MAX_TYPE_CHARS 20
+#define WIDTH_SIGNIFICANCE_THRESHOLD 100
 
 static int needs_reparsing(wordexp_t *w, const char *filename)
 {
@@ -336,13 +339,36 @@ static void sort_cc_results(CXCompletionResult *results, size_t results_n)
 	      (int (*)(const void*,const void*))code_completion_results_cmp);
 }
 
+static struct str *all_results_fmt(CXCompletionResult *results,
+				   size_t results_n)
+{
+	if (results_n > WIDTH_SIGNIFICANCE_THRESHOLD)
+		return str_printf("%%%ds %%s", MAX_TYPE_CHARS);
+
+	size_t maxl = 0;
+	for (size_t i = 0; i < results_n; ++i) {
+		if (maxl != MAX_TYPE_CHARS) {
+			size_t l = count_type_chars(&results[i]);
+			if (l > maxl) {
+				if (l > MAX_TYPE_CHARS)
+					maxl = MAX_TYPE_CHARS;
+				else
+					maxl = l;
+			}
+		}
+	}
+	if (maxl == 0)
+		maxl = MAX_TYPE_CHARS;
+	return str_printf("%%%ds %%s", maxl);
+}
+
 static size_t filter_out_cc_results(CXCompletionResult *results,
 				    size_t results_n,
 				    struct str *partial,
 				    struct str **fmt)
 {
 	if (!partial) {
-		*fmt = str_printf("%%%ds %%s", MAX_TYPE_CHARS);
+		*fmt = all_results_fmt(results, results_n);
 		return results_n;
 	}
 
@@ -372,6 +398,8 @@ static size_t filter_out_cc_results(CXCompletionResult *results,
 
 		cur++;
 	}
+	if (maxl == 0)
+		maxl = MAX_TYPE_CHARS;
 	*fmt = str_printf("%%%ds %%s", maxl);
 	return cur;
 }
