@@ -20,15 +20,32 @@ static struct str *extract_partial(struct msg_ac *msg);
 static int isident(int c);
 static void try_load_dotccode(wordexp_t *wexp, const char *filename);
 static void handle_sigint(int);
+static int wordexps_the_same(wordexp_t *a, wordexp_t *b);
+static int needs_reparsing(wordexp_t *w, const char *filename);
 
 //-------------------------------------------------------------------------
 
 static CXIndex clang_index;
 static CXTranslationUnit clang_tu;
 static char *last_filename;
+static wordexp_t last_wordexp;
 static struct str *sock_path;
 
 #define SERVER_SOCKET_BACKLOG 10
+
+static int needs_reparsing(wordexp_t *w, const char *filename)
+{
+	if (!last_filename)
+		return 1;
+
+	if (strcmp(filename, last_filename) != 0)
+		return 1;
+
+	if (!wordexps_the_same(w, &last_wordexp))
+		return 1;
+
+	return 0;
+}
 
 static int create_server_socket(const struct str *file)
 {
@@ -175,11 +192,11 @@ static void process_ac(int sock)
 
 	struct str *partial = extract_partial(&msg);
 
-	if (partial) {
+	if (partial)
 		msg.col -= partial->len;
-	}
 
-	if (!last_filename || strcmp(last_filename, msg.filename) != 0) {
+	if (needs_reparsing(&flags, msg.filename)) {
+		printf("reparsing triggered\n");
 		if (clang_tu)
 			clang_disposeTranslationUnit(clang_tu);
 
@@ -190,11 +207,11 @@ static void process_ac(int sock)
 						      clang_defaultEditingTranslationUnitOptions());
 		if (last_filename)
 			free(last_filename);
+		if (last_wordexp.we_wordv)
+			wordfree(&last_wordexp);
 		last_filename = strdup(msg.filename);
+		last_wordexp = flags;
 	}
-
-	if (flags.we_wordv)
-		wordfree(&flags);
 
 	// diag
 	/*
@@ -302,6 +319,18 @@ static void handle_sigint(int unused)
 {
 	unlink(sock_path->data);
 	exit(0);
+}
+
+static int wordexps_the_same(wordexp_t *a, wordexp_t *b)
+{
+	if (a->we_wordc != b->we_wordc)
+		return 0;
+
+	for (size_t i = 0; i < a->we_wordc; i++) {
+		if (strcmp(a->we_wordv[i], b->we_wordv[i]) != 0)
+			return 0;
+	}
+	return 1;
 }
 
 void server_main()
