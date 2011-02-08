@@ -9,12 +9,23 @@
 #include <wordexp.h>
 #include <clang-c/Index.h>
 
+struct make_ac_ctx {
+	struct str *word;
+	struct str *abbr;
+	struct str *type;
+	struct str *text;
+};
+
+static void init_make_ac_ctx(struct make_ac_ctx *ctx);
+static void free_make_ac_ctx(struct make_ac_ctx *ctx);
+
 // for reference
 static int create_server_socket(const struct str *file);
 static void server_loop(int sock);
 static void process_ac(int sock);
 static void print_completion_result(CXCompletionResult *r);
-static int make_ac_proposal(struct ac_proposal *p,
+static int make_ac_proposal(struct make_ac_ctx *ctx,
+			    struct ac_proposal *p,
 			    CXCompletionResult *r,
 			    struct str *fmt);
 static struct str *extract_partial(struct msg_ac *msg);
@@ -46,6 +57,22 @@ static struct str *sock_path;
 #define MAX_AC_RESULTS 999999
 #define MAX_TYPE_CHARS 20
 #define WIDTH_SIGNIFICANCE_THRESHOLD 100
+
+static void init_make_ac_ctx(struct make_ac_ctx *ctx)
+{
+	ctx->word = str_new(0);
+	ctx->abbr = str_new(0);
+	ctx->type = str_new(0);
+	ctx->text = str_new(0);
+}
+
+static void free_make_ac_ctx(struct make_ac_ctx *ctx)
+{
+	str_free(ctx->word);
+	str_free(ctx->abbr);
+	str_free(ctx->type);
+	str_free(ctx->text);
+}
 
 static int needs_reparsing(wordexp_t *w, const char *filename)
 {
@@ -257,7 +284,10 @@ static void process_ac(int sock)
 	struct msg_ac_response msg_r = { (partial) ? partial->len : 0, 0, 0 };
 
 	if (results) {
+		struct make_ac_ctx ctx;
 		struct str *fmt;
+
+		init_make_ac_ctx(&ctx);
 		msg_r.proposals_n = filter_out_cc_results(results->Results,
 							  results->NumResults,
 							  partial, &fmt);
@@ -270,17 +300,20 @@ static void process_ac(int sock)
 		int cur = 0;
 		for (int i = 0; i < msg_r.proposals_n; ++i) {
 			int added;
-			added = make_ac_proposal(&msg_r.proposals[cur],
+			added = make_ac_proposal(&ctx,
+						 &msg_r.proposals[cur],
 						 &results->Results[i],
 						 fmt);
 			if (added)
 				cur++;
 		}
 		msg_r.proposals_n = cur;
+		free_make_ac_ctx(&ctx);
 		str_free(fmt);
 	}
 
 	if (partial)
+
 		str_free(partial);
 	clang_disposeCodeCompleteResults(results);
 
@@ -405,17 +438,16 @@ static size_t filter_out_cc_results(CXCompletionResult *results,
 	return cur;
 }
 
-static int make_ac_proposal(struct ac_proposal *p,
+static int make_ac_proposal(struct make_ac_ctx *ctx, struct ac_proposal *p,
 			    CXCompletionResult *r, struct str *fmt)
 {
-	struct str *abbr, *word, *type, *text;
 	unsigned int chunks_n;
 
 	chunks_n = clang_getNumCompletionChunks(r->CompletionString);
-	word = str_new(0);
-	abbr = str_new(0);
-	type = str_new(0);
-	text = str_new(0);
+	str_clear(ctx->word);
+	str_clear(ctx->abbr);
+	str_clear(ctx->type);
+	str_clear(ctx->text);
 
 	for (unsigned int i = 0; i < chunks_n; ++i) {
 		enum CXCompletionChunkKind kind;
@@ -425,29 +457,26 @@ static int make_ac_proposal(struct ac_proposal *p,
 		s = clang_getCompletionChunkText(r->CompletionString, i);
 		switch (kind) {
 		case CXCompletionChunk_ResultType:
-			str_add_printf(&type, "%s", clang_getCString(s));
+			str_add_printf(&ctx->type, "%s", clang_getCString(s));
 			break;
 		case CXCompletionChunk_TypedText:
-			str_add_cstr(&word, clang_getCString(s));
+			str_add_cstr(&ctx->word, clang_getCString(s));
 		default:
-			str_add_cstr(&text, clang_getCString(s));
+			str_add_cstr(&ctx->text, clang_getCString(s));
 			break;
 		}
 		clang_disposeString(s);
 	}
 
-	if (type->len > MAX_TYPE_CHARS) {
-		type->len = MAX_TYPE_CHARS-1;
-		str_add_cstr(&type, "…");
+	if (ctx->type->len > MAX_TYPE_CHARS) {
+		ctx->type->len = MAX_TYPE_CHARS-1;
+		str_add_cstr(&ctx->type, "…");
 	}
-	str_add_printf(&abbr, fmt->data, type->data, text->data);
+	str_add_printf(&ctx->abbr, fmt->data,
+		       ctx->type->data, ctx->text->data);
 
-	p->abbr = strdup(abbr->data);
-	p->word = strdup(word->data);
-	str_free(word);
-	str_free(abbr);
-	str_free(type);
-	str_free(text);
+	p->abbr = strdup(ctx->abbr->data);
+	p->word = strdup(ctx->word->data);
 	return 1;
 }
 
