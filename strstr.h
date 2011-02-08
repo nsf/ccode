@@ -41,6 +41,7 @@ struct str *str_printf(const char *fmt, ...);
 struct str *str_dup(const struct str *str);
 
 void str_free(struct str *str);
+void str_clear(struct str *str);
 
 /* make sure there is enough capacity for 'n' additional bytes */
 void str_ensure_cap(struct str **str, unsigned int n);

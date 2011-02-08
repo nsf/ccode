@@ -63,6 +63,12 @@ void str_free(struct str *str)
 	free(str);
 }
 
+void str_clear(struct str *str)
+{
+	str->len = 0;
+	str->data[0] = '\0';
+}
+
 struct str *str_from_cstr(const char *cstr)
 {
 	assert(cstr != 0);
