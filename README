@@ -15,7 +15,7 @@ Something that should looks like a usage guide
 
 1. Build everything (see update.bash).
 2. Place it somewhere on your $PATH.
-3. Copy vim plugin to your .vim dir.
+3. Copy vim plugin to your .vim/plugin dir.
 4. Daemon starts automatically, everything should work out of the box.
 5. Use <C-x><C-o> for autocompletion.
 
