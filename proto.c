@@ -1,4 +1,4 @@
-#include "proto.h"
+#include "shared.h"
 #include <stdlib.h>
 
 tpl_node *msg_node_pack(int msgtype)
@@ -27,14 +27,6 @@ void free_msg_ac(struct msg_ac *msg)
 }
 
 //-------------------------------------------------------------------------
-
-tpl_node *msg_ac_response_node(struct msg_ac_response *msg)
-{
-	tpl_node *tn = tpl_map(MSG_AC_RESPONSE_FMT,
-			       msg->proposals,
-			       msg->proposals_n);
-	return tn;
-}
 
 void msg_ac_response_send(struct msg_ac_response *msg, int sock)
 {
