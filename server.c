@@ -196,7 +196,6 @@ static void process_ac(int sock)
 		msg.col -= partial->len;
 
 	if (needs_reparsing(&flags, msg.filename)) {
-		printf("reparsing triggered\n");
 		if (clang_tu)
 			clang_disposeTranslationUnit(clang_tu);
 
@@ -271,17 +270,18 @@ static void process_ac(int sock)
 	free_msg_ac_response(&msg_r);
 }
 
-
 static int make_ac_proposal(struct ac_proposal *p,
 			    CXCompletionResult *r,
 			    struct str *partial)
 {
-	struct str *abbr, *word;
+	struct str *abbr, *word, *type, *text;
 	unsigned int chunks_n;
 
 	chunks_n = clang_getNumCompletionChunks(r->CompletionString);
 	word = str_new(0);
 	abbr = str_new(0);
+	type = str_new(0);
+	text = str_new(0);
 
 	for (unsigned int i = 0; i < chunks_n; ++i) {
 		enum CXCompletionChunkKind kind;
@@ -291,27 +291,37 @@ static int make_ac_proposal(struct ac_proposal *p,
 		s = clang_getCompletionChunkText(r->CompletionString, i);
 		switch (kind) {
 		case CXCompletionChunk_ResultType:
-			//str_add_printf(&abbr, "%s ", clang_getCString(s));
+			str_add_printf(&type, "%s", clang_getCString(s));
 			break;
 		case CXCompletionChunk_TypedText:
 			str_add_cstr(&word, clang_getCString(s));
 			if (partial && !starts_with(word->data, partial->data)) {
 				str_free(word);
 				str_free(abbr);
+				str_free(type);
+				str_free(text);
 				clang_disposeString(s);
 				return 0;
 			}
 		default:
-			str_add_cstr(&abbr, clang_getCString(s));
+			str_add_cstr(&text, clang_getCString(s));
 			break;
 		}
 		clang_disposeString(s);
 	}
 
+	if (type->len > 16) {
+		type->len = 15;
+		str_add_cstr(&type, "…");
+	}
+	str_add_printf(&abbr, "%16s %s", type->data, text->data);
+
 	p->abbr = strdup(abbr->data);
 	p->word = strdup(word->data);
 	str_free(word);
 	str_free(abbr);
+	str_free(type);
+	str_free(text);
 	return 1;
 }
 
