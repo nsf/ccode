@@ -175,13 +175,9 @@ static void process_ac(int sock)
 
 	struct str *partial = extract_partial(&msg);
 
-	//printf("AUTOCOMPLETION:\n");
 	if (partial) {
 		msg.col -= partial->len;
-		//printf(" partial: '%s'\n", partial->data);
 	}
-	//printf(" buffer size: %d\n", msg.buffer.sz);
-	//printf(" location: %s:%d:%d\n", msg.filename, msg.line, msg.col);
 
 	if (!last_filename || strcmp(last_filename, msg.filename) != 0) {
 		if (clang_tu)
@@ -248,9 +244,6 @@ static void process_ac(int sock)
 				cur++;
 		}
 		msg_r.proposals_n = cur;
-
-		//printf(" results: %d\n", msg_r.proposals_n);
-		//printf("--------------------------------------------------\n");
 	}
 
 	if (partial)
