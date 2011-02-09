@@ -5,6 +5,7 @@ CCode - An autocompletion daemon for the C programming language.
 3. Mostly done, but has few quirks.
 4. Can be used to complete C++/ObjC, but I'm not targeting these languages. Don't report C++/ObjC specific bugs.
 5. Currently only per directory CFLAGS configuration (just dump your CFLAGS to .ccode file).
+6. Should work on both 32 and 64 bit machines.
 
 ![CCode in vim](http://nsf.github.com/images/ccode.png)
 
