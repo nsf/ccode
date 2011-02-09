@@ -1,4 +1,5 @@
 #include "shared.h"
+#include <sys/select.h>
 #include <sys/socket.h>
 #include <sys/un.h>
 #include <stdlib.h>
@@ -57,6 +58,7 @@ static struct str *sock_path;
 #define MAX_AC_RESULTS 999999
 #define MAX_TYPE_CHARS 20
 #define WIDTH_SIGNIFICANCE_THRESHOLD 100
+#define AUTO_SHUTDOWN_TIME 15
 
 static void init_make_ac_ctx(struct make_ac_ctx *ctx)
 {
@@ -112,12 +114,29 @@ static int create_server_socket(const struct str *file)
 
 static void server_loop(int sock)
 {
+	struct timeval oneminute = { 60, 0 };
+	fd_set sockset;
+	int minutes_idle = 0;
+
 	// accepting and dispatching messages
 	for (;;) {
 		int msg_type;
 		tpl_node *tn;
 		int incoming;
+		int maxfd, result;
 
+		FD_ZERO(&sockset);
+		FD_SET(sock, &sockset);
+		maxfd = sock;
+		result = select(maxfd+1, &sockset, 0, 0, &oneminute);
+		if (!result) {
+			minutes_idle++;
+			if (minutes_idle >= AUTO_SHUTDOWN_TIME)
+				return;
+			continue;
+		}
+
+		minutes_idle = 0;
 		incoming = accept(sock, 0, 0);
 		if (incoming == -1) {
 			fprintf(stderr, "Error! Failed to accept an incoming connection.\n");
