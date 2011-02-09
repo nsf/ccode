@@ -1,5 +1,6 @@
 #include "shared.h"
 #include <sys/types.h>
+#include <sys/stat.h>
 #include <sys/socket.h>
 #include <sys/un.h>
 #include <stdio.h>
@@ -40,7 +41,25 @@ static int try_connect(int sock, const char *file)
 static void run_server_and_wait(const char *path)
 {
 	if (fork() == 0) {
+		pid_t sid;
+
+		// Change file mode mask
+		umask(0);
+		// new SID for the child, detach from the parent
+		sid = setsid();
+		if (sid < 0)
+			exit(1);
+		// chdir (unlock the dir)
+		if (chdir("/") < 0)
+			exit(1);
+
+		// redirect standard files to /dev/null
+		freopen( "/dev/null", "r", stdin);
+		freopen( "/dev/null", "w", stdout);
+		freopen( "/dev/null", "w", stderr);
+
 		server_main();
+
 		exit(0);
 	} else {
 		// wait for 10ms up to 100 times (1 second) for socket
