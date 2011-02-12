@@ -22,6 +22,6 @@ Something that should look like a usage guide
 
 FAQ
 ---
-Q: My linux distribution contains broken LLVM/clang build (e.g. archlinux, gentoo) and clang doesn't see its include directory (/usr/lib/clang/2.8/include). What should I do?
+Q: My linux distribution contains broken LLVM/clang build and clang doesn't see its include directory (/usr/lib/clang/2.8/include). What should I do?
 
-A: In your project dir: `echo " -I/usr/lib/clang/2.8/include" >> .ccode` (Also for archlinux see this bug: https://bugs.archlinux.org/task/22799)
+A: In your project dir: `echo " -I/usr/lib/clang/2.8/include" >> .ccode`.
