@@ -410,8 +410,6 @@ static struct str *all_results_fmt(CXCompletionResult *results,
 			}
 		}
 	}
-	if (maxl == 0)
-		maxl = MAX_TYPE_CHARS;
 	return str_printf("%%%ds %%s", maxl);
 }
 
@@ -451,8 +449,6 @@ static size_t filter_out_cc_results(CXCompletionResult *results,
 
 		cur++;
 	}
-	if (maxl == 0)
-		maxl = MAX_TYPE_CHARS;
 	*fmt = str_printf("%%%ds %%s", maxl);
 	return cur;
 }
