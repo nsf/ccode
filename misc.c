@@ -65,7 +65,7 @@ int read_stdin(void **out, size_t *size)
 	return 0;
 }
 
-struct str *get_socket_path()
+str_t *get_socket_path()
 {
 	char *user = getenv("USER");
 	if (user)

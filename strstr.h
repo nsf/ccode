@@ -14,7 +14,7 @@
  * both x86 and x86_64, so I think it's a reasonable choice.
  *
  * The amount of memory required for a str with capacity == 5 is:
- *	(sizeof(struct str) + 5 + 1)
+ *	(sizeof(str_t) + 5 + 1)
  *
  * Additional byte is used for zero termination and it's not a part of the
  * capacity.
@@ -22,41 +22,62 @@
  * String data is always a correct C string.
  */
 
+#include <stddef.h> /* for size_t */
+
+/* TODO(nsf): Use this overridable allocator interface and add tests for
+ * malloc/free correctness.
+ *
+ * A good idea: allocator interface should be stored in a thread-local
+ * variable.
+ */
+struct str_alloc_interface {
+	void *(*malloc)(size_t);
+	void (*free)(void*);
+};
+
 /* should be > 0, and remember, that real memory size is +1 (trailing \0 byte) */
 #ifndef STR_DEFAULT_CAPACITY
 #define STR_DEFAULT_CAPACITY 7
 #endif
 
-struct str {
+typedef struct str {
 	unsigned int cap;
 	unsigned int len;
 	char data[];
-};
+} str_t;
 
 /* different ways to create a str */
-struct str *str_new(unsigned int cap);
-struct str *str_from_cstr(const char *cstr);
-struct str *str_from_cstr_len(const char *cstr, unsigned int len);
-struct str *str_printf(const char *fmt, ...);
-struct str *str_dup(const struct str *str);
+str_t *str_new(unsigned int cap);
+str_t *str_from_cstr(const char *cstr);
+str_t *str_from_cstr_len(const char *cstr, unsigned int len);
+str_t *str_printf(const char *fmt, ...);
+str_t *str_dup(const str_t *str);
+str_t *str_from_file(const char *filename);
 
-void str_free(struct str *str);
-void str_clear(struct str *str);
+void str_free(str_t *str);
+void str_clear(str_t *str);
 
 /* make sure there is enough capacity for 'n' additional bytes */
-void str_ensure_cap(struct str **str, unsigned int n);
+void str_ensure_cap(str_t **str, unsigned int n);
 
 /* appending to a str */
-void str_add_str(struct str **str, const struct str *str2);
-void str_add_cstr(struct str **str, const char *cstr);
-void str_add_printf(struct str **str, const char *fmt, ...);
+void str_add_str(str_t **str, const str_t *str2);
+void str_add_cstr(str_t **str, const char *cstr);
+void str_add_cstr_len(str_t **str, const char *cstr, unsigned int len);
+void str_add_printf(str_t **str, const char *fmt, ...);
+void str_add_file(str_t **str, const char *filename);
 
 /* trim, removes 'isspace' characters from sides: both, left, right */
-void str_trim(struct str *str);
-void str_ltrim(struct str *str);
-void str_rtrim(struct str *str);
+void str_trim(str_t *str);
+void str_ltrim(str_t *str);
+void str_rtrim(str_t *str);
 
-struct str *str_path_split(const struct str *str, struct str **half2);
+/* Splits 'path' immediately following the final path separator, separating it
+ * into a directory and file name component. Returns a directory component if
+ * any (if none, returns zero). If 'half2' isn't zero, writes file name
+ * component to it (allocating a str, you're responsible to free it).
+ */
+str_t *str_split_path(const str_t *path, str_t **half2);
 
 /*
  * FStr is a fixed string.
@@ -66,17 +87,17 @@ struct str *str_path_split(const struct str *str, struct str **half2);
  * capacity of the FStr is a buffer length minus one (zero termination).
  */
 
-struct fstr {
+typedef struct fstr {
 	unsigned int cap;
 	unsigned int len;
 	char *data;
-};
+} fstr_t;
 
 #define FSTR_INIT_FOR_BUF(fstr, buf)\
 	fstr_init(fstr, buf, 0, sizeof(buf)/sizeof(buf[0])-1)
-void fstr_init(struct fstr *fstr, char *data, unsigned int len, unsigned int cap);
+void fstr_init(fstr_t *fstr, char *data, unsigned int len, unsigned int cap);
 
 /* appending to a fstr */
-void fstr_add_str(struct fstr *fstr, const struct str *str);
-void fstr_add_cstr(struct fstr *fstr, const char *cstr);
-void fstr_add_printf(struct fstr *fstr, const char *fmt, ...);
+void fstr_add_str(fstr_t *fstr, const str_t *str);
+void fstr_add_cstr(fstr_t *fstr, const char *cstr);
+void fstr_add_printf(fstr_t *fstr, const char *fmt, ...);

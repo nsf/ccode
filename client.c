@@ -28,8 +28,9 @@ static int create_client_socket()
 
 static int try_connect(int sock, const char *file)
 {
-	struct fstr addrpath;
 	struct sockaddr_un addr;
+	fstr_t addrpath;
+
 	addr.sun_family = AF_UNIX;
 
 	FSTR_INIT_FOR_BUF(&addrpath, addr.sun_path);
@@ -76,7 +77,7 @@ static void run_server_and_wait(const char *path)
 
 static int connect_or_die()
 {
-	struct str *path;
+	str_t *path;
 	int sock;
 
 	path = get_socket_path();
@@ -101,7 +102,7 @@ static int connect_or_die()
 
 static char *prepend_cwd(const char *file)
 {
-	struct str *tmp;
+	str_t *tmp;
 	char cwd[1024];
 	char *ret;
 	char *pcwd;

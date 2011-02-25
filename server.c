@@ -11,25 +11,25 @@
 #include <clang-c/Index.h>
 
 struct make_ac_ctx {
-	struct str *word;
-	struct str *abbr;
-	struct str *type;
-	struct str *text;
+	str_t *word;
+	str_t *abbr;
+	str_t *type;
+	str_t *text;
 };
 
 static void init_make_ac_ctx(struct make_ac_ctx *ctx);
 static void free_make_ac_ctx(struct make_ac_ctx *ctx);
 
 // for reference
-static int create_server_socket(const struct str *file);
+static int create_server_socket(const str_t *file);
 static void server_loop(int sock);
 static void process_ac(int sock);
 static void print_completion_result(CXCompletionResult *r);
 static int make_ac_proposal(struct make_ac_ctx *ctx,
 			    struct ac_proposal *p,
 			    CXCompletionResult *r,
-			    struct str *fmt);
-static struct str *extract_partial(struct msg_ac *msg);
+			    str_t *fmt);
+static str_t *extract_partial(struct msg_ac *msg);
 static int isident(int c);
 static void try_load_dotccode(wordexp_t *wexp, const char *filename);
 static void handle_sigint(int);
@@ -41,9 +41,9 @@ static int code_completion_results_cmp(CXCompletionResult *r1,
 static CXString get_result_typed_text(CXCompletionResult *r);
 static size_t count_type_chars(CXCompletionResult *r);
 static size_t filter_out_cc_results(CXCompletionResult *results,
-				    size_t results_n, struct str *partial,
-				    struct str **fmt);
-static struct str *all_results_fmt(CXCompletionResult *results,
+				    size_t results_n, str_t *partial,
+				    str_t **fmt);
+static str_t *all_results_fmt(CXCompletionResult *results,
 				   size_t results_n);
 
 //-------------------------------------------------------------------------
@@ -52,7 +52,7 @@ static CXIndex clang_index;
 static CXTranslationUnit clang_tu;
 static char *last_filename;
 static wordexp_t last_wordexp;
-static struct str *sock_path;
+static str_t *sock_path;
 
 #define SERVER_SOCKET_BACKLOG 10
 #define MAX_AC_RESULTS 999999
@@ -90,14 +90,15 @@ static int needs_reparsing(wordexp_t *w, const char *filename)
 	return 0;
 }
 
-static int create_server_socket(const struct str *file)
+static int create_server_socket(const str_t *file)
 {
 	int sock = socket(AF_UNIX, SOCK_STREAM, 0);
 	if (sock == -1)
 		return -1;
 
-	struct fstr addrpath;
 	struct sockaddr_un addr;
+	fstr_t addrpath;
+
 	addr.sun_family = AF_UNIX;
 
 	FSTR_INIT_FOR_BUF(&addrpath, addr.sun_path);
@@ -163,7 +164,7 @@ static void server_loop(int sock)
 	}
 }
 
-static struct str *extract_partial(struct msg_ac *msg)
+static str_t *extract_partial(struct msg_ac *msg)
 {
 	char *cursor;
 	char *c = msg->buffer.addr;
@@ -204,14 +205,14 @@ static void try_load_dotccode(wordexp_t *wexp, const char *filename)
 {
 	void *buf;
 	size_t size;
-	struct str *fn;
-	struct str *dotccode;
+	str_t *fn;
+	str_t *dotccode;
 
 	wexp->we_wordc = 0;
 	wexp->we_wordv = 0;
 
 	fn = str_from_cstr(filename);
-	dotccode = str_path_split(fn, 0);
+	dotccode = str_split_path(fn, 0);
 	str_add_cstr(&dotccode, "/.ccode");
 
 	if (read_file(&buf, &size, dotccode->data) == -1) {
@@ -221,7 +222,7 @@ static void try_load_dotccode(wordexp_t *wexp, const char *filename)
 	}
 
 	// TODO: fstr trim? cstr trim?
-	struct str *contents = str_from_cstr_len(buf, (unsigned int)size);
+	str_t *contents = str_from_cstr_len(buf, (unsigned int)size);
 	str_trim(contents);
 
 	wordexp(contents->data, wexp, 0);
@@ -250,7 +251,7 @@ static void process_ac(int sock)
 
 	try_load_dotccode(&flags, msg.filename);
 
-	struct str *partial = extract_partial(&msg);
+	str_t *partial = extract_partial(&msg);
 
 	if (partial)
 		msg.col -= partial->len;
@@ -304,7 +305,7 @@ static void process_ac(int sock)
 
 	if (results) {
 		struct make_ac_ctx ctx;
-		struct str *fmt;
+		str_t *fmt;
 
 		init_make_ac_ctx(&ctx);
 		msg_r.proposals_n = filter_out_cc_results(results->Results,
@@ -392,7 +393,7 @@ static void sort_cc_results(CXCompletionResult *results, size_t results_n)
 	      (int (*)(const void*,const void*))code_completion_results_cmp);
 }
 
-static struct str *all_results_fmt(CXCompletionResult *results,
+static str_t *all_results_fmt(CXCompletionResult *results,
 				   size_t results_n)
 {
 	if (results_n > WIDTH_SIGNIFICANCE_THRESHOLD)
@@ -415,8 +416,8 @@ static struct str *all_results_fmt(CXCompletionResult *results,
 
 static size_t filter_out_cc_results(CXCompletionResult *results,
 				    size_t results_n,
-				    struct str *partial,
-				    struct str **fmt)
+				    str_t *partial,
+				    str_t **fmt)
 {
 	if (!partial) {
 		*fmt = all_results_fmt(results, results_n);
@@ -454,7 +455,7 @@ static size_t filter_out_cc_results(CXCompletionResult *results,
 }
 
 static int make_ac_proposal(struct make_ac_ctx *ctx, struct ac_proposal *p,
-			    CXCompletionResult *r, struct str *fmt)
+			    CXCompletionResult *r, str_t *fmt)
 {
 	unsigned int chunks_n;
 

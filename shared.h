@@ -59,7 +59,7 @@ int starts_with(const char *s1, const char *s2);
 int read_file(void **out, size_t *size, const char *filename);
 int read_stdin(void **out, size_t *size);
 
-struct str *get_socket_path();
+str_t *get_socket_path();
 
 void client_main(int argc, char **argv);
 void server_main();
