@@ -1,10 +1,10 @@
 CCode - An autocompletion daemon for the C programming language.
 
 1. Linux only, don't ask me to port it somewhere. If you need that - do it. But kinda works on Mac too.
-2. Relies on a C99 compliance (flexible array members, snprintf behaviour, etc).
+2. Relies on the C99 compliance (flexible array members, snprintf behaviour, etc).
 3. Mostly done, but has few quirks.
 4. Can be used to complete C++/ObjC, but I'm not targeting these languages. Don't report C++/ObjC specific bugs.
-5. Currently only per directory CFLAGS configuration (just dump your CFLAGS to .ccode file).
+5. Currently only per directory CFLAGS configuration (just dump your CFLAGS to .ccode file). CCode supports shell expansion, e.g. `echo "\$(pkg-config --cflags sdl)" > .ccode` will execute pkg-config with each autocompletion request.
 6. Should work on both 32 and 64 bit machines.
 
 ![CCode in vim](http://nsf.github.com/images/ccode.png)
