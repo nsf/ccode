@@ -24,16 +24,22 @@
 
 #include <stddef.h> /* for size_t */
 
-/* TODO(nsf): Use this overridable allocator interface and add tests for
- * malloc/free correctness.
- *
- * A good idea: allocator interface should be stored in a thread-local
- * variable.
- */
-struct str_alloc_interface {
+typedef struct str_allocator {
 	void *(*malloc)(size_t);
 	void (*free)(void*);
-};
+} str_allocator_t;
+
+/* These functions do not store the pointer to an allocator structure, they
+ * just copy the contents of this structure.
+ *
+ * str_set_allocator - to specify a new pair of allocator functions for a
+ * current thread
+ *
+ * str_get_allocator - to retrieve a pair of allocator functions for a current
+ * thread.
+ */
+void str_set_allocator(const str_allocator_t *new_alloc);
+void str_get_allocator(str_allocator_t *out);
 
 /* should be > 0, and remember, that real memory size is +1 (trailing \0 byte) */
 #ifndef STR_DEFAULT_CAPACITY

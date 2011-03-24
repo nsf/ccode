@@ -8,19 +8,32 @@
 #include <ctype.h>
 
 //-------------------------------------------------------------------------------
+// Default allocator
+//-------------------------------------------------------------------------------
 
-static void die(const char *msg)
-{
-	fprintf(stderr, "%s\n", msg);
-	exit(1);
-}
-
-static void *xalloc(size_t size)
+static void *xmalloc(size_t size)
 {
 	void *m = malloc(size);
-	if (!m)
-		die("Fatal error! Memory allocation failed.");
+	if (!m) {
+		fprintf(stderr, "Fatal error! Memory allocation failed.\n");
+		exit(1);
+	}
 	return m;
+}
+
+static __thread str_allocator_t allocator = {
+	xmalloc,
+	free
+};
+
+void str_set_allocator(const str_allocator_t *a)
+{
+	allocator = *a;
+}
+
+void str_get_allocator(str_allocator_t *a)
+{
+	*a = allocator;
 }
 
 //-------------------------------------------------------------------------------
@@ -40,7 +53,7 @@ str_t *str_new(unsigned int cap)
 {
 	if (!cap)
 		cap = STR_DEFAULT_CAPACITY;
-	str_t *str = xalloc(sizeof(str_t) + cap + 1);
+	str_t *str = (*allocator.malloc)(sizeof(str_t) + cap + 1);
 	str->len = 0;
 	str->cap = cap;
 	str->data[0] = '\0';
@@ -49,7 +62,7 @@ str_t *str_new(unsigned int cap)
 
 void str_free(str_t *str)
 {
-	free(str);
+	(*allocator.free)(str);
 }
 
 void str_clear(str_t *str)
@@ -67,7 +80,7 @@ str_t *str_from_cstr(const char *cstr)
 str_t *str_from_cstr_len(const char *cstr, unsigned int len)
 {
 	unsigned int cap = len > 0 ? len : STR_DEFAULT_CAPACITY;
-	str_t *str = xalloc(sizeof(str_t) + cap + 1);
+	str_t *str = (*allocator.malloc)(sizeof(str_t) + cap + 1);
 	str->len = len;
 	str->cap = cap;
 	if (len > 0)
@@ -98,11 +111,11 @@ str_t *str_from_file(const char *filename)
 		return 0;
 
 
-	str = xalloc(sizeof(str_t) + st.st_size + 1);
+	str = (*allocator.malloc)(sizeof(str_t) + st.st_size + 1);
 	str->cap = str->len = st.st_size;
 	if (st.st_size != fread(str->data, 1, st.st_size, f)) {
 		fclose(f);
-		free(str);
+		(*allocator.free)(str);
 		return 0;
 	}
 	fclose(f);
@@ -121,15 +134,14 @@ void str_ensure_cap(str_t **out_str, unsigned int n)
 		if (newcap - str->len < n)
 			newcap = str->len + n;
 
-		str_t *newstr = xalloc(sizeof(str_t) +
-					    newcap + 1);
+		str_t *newstr = (*allocator.malloc)(sizeof(str_t) + newcap + 1);
 		newstr->cap = newcap;
 		newstr->len = str->len;
 		if (str->len > 0)
 			memcpy(newstr->data, str->data, str->len + 1);
 		else
 			newstr->data[0] = '\0';
-		free(str);
+		(*allocator.free)(str);
 		*out_str = newstr;
 	}
 }
@@ -144,8 +156,7 @@ str_t *str_printf(const char *fmt, ...)
 	unsigned int len = vsnprintf(0, 0, fmt, va);
 	va_end(va);
 
-	str_t *str = xalloc(sizeof(str_t) +
-				 len + 1);
+	str_t *str = (*allocator.malloc)(sizeof(str_t) + len + 1);
 	str->len = str->cap = len;
 	va_start(va, fmt);
 	vsnprintf(str->data, len + 1, fmt, va);
