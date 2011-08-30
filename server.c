@@ -31,7 +31,7 @@ static int make_ac_proposal(struct make_ac_ctx *ctx,
 			    str_t *fmt);
 static str_t *extract_partial(struct msg_ac *msg);
 static int isident(int c);
-static void try_load_dotccode(wordexp_t *wexp, const char *filename);
+static void try_load_dotccode(wordexp_t *wexp);
 static void handle_sigint(int);
 static int wordexps_the_same(wordexp_t *a, wordexp_t *b);
 static int needs_reparsing(wordexp_t *w, const char *filename);
@@ -201,23 +201,15 @@ static int isident(int c)
 	return 0;
 }
 
-static void try_load_dotccode(wordexp_t *wexp, const char *filename)
+static void try_load_dotccode(wordexp_t *wexp)
 {
 	void *buf;
 	size_t size;
-	str_t *fn;
-	str_t *dotccode;
 
 	wexp->we_wordc = 0;
 	wexp->we_wordv = 0;
 
-	fn = str_from_cstr(filename);
-	dotccode = str_split_path(fn, 0);
-	str_add_cstr(&dotccode, "/.ccode");
-
-	if (read_file(&buf, &size, dotccode->data) == -1) {
-		str_free(fn);
-		str_free(dotccode);
+	if (read_file(&buf, &size, ".ccode") == -1) {
 		return;
 	}
 
@@ -226,10 +218,18 @@ static void try_load_dotccode(wordexp_t *wexp, const char *filename)
 	str_trim(contents);
 
 	wordexp(contents->data, wexp, 0);
-	str_free(fn);
-	str_free(dotccode);
 	str_free(contents);
 	free(buf);
+}
+
+static void change_dir(const char *filename)
+{
+	str_t *dir, *fn;
+	fn = str_from_cstr(filename);
+	dir = str_split_path(fn, 0);
+	chdir(dir->data);
+	str_free(dir);
+	str_free(fn);
 }
 
 static void process_ac(int sock)
@@ -249,7 +249,8 @@ static void process_ac(int sock)
 		msg.buffer.sz
 	};
 
-	try_load_dotccode(&flags, msg.filename);
+	change_dir(msg.filename);
+	try_load_dotccode(&flags);
 
 	str_t *partial = extract_partial(&msg);
 
