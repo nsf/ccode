@@ -367,8 +367,8 @@ static CXString get_result_typed_text(CXCompletionResult *r)
 		if (kind == CXCompletionChunk_TypedText)
 			return clang_getCompletionChunkText(r->CompletionString, i);
 	}
-	fprintf(stderr, "No typed text chunk, fuck!\n");
-	exit(1);
+	CXString empty = {0,0};
+	return empty;
 }
 
 static size_t count_type_chars(CXCompletionResult *r)
@@ -428,6 +428,8 @@ static size_t filter_out_cc_results(CXCompletionResult *results,
 	size_t cur = 0;
 	for (size_t i = 0; i < results_n; ++i) {
 		CXString s = get_result_typed_text(&results[i]);
+		if (!s.data)
+			continue;
 		if (!starts_with(clang_getCString(s), partial->data)) {
 			clang_disposeString(s);
 			continue;
